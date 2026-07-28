@@ -10,7 +10,7 @@ from src.penalty_tuning import tune_penalties
 with open("tests/fixtures/scaled_data.json") as f:
     data = json.load(f)
 
-clusters = decompose_network(data, n_clusters=3)
+clusters = decompose_network(data, n_clusters=2)
 
 learned_weights_per_cluster = {}
 for cluster_id, sub_data in clusters.items():

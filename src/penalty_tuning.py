@@ -15,17 +15,25 @@ PARAM_KEY_MAP = {
     "p_emissions": "emissions",
 }
 
-# 🔧 Borne basse relevee de 1 a 50 : un poids de penalite a un chiffre est presque
-# toujours trop faible face a des couts reels de plusieurs centaines/milliers --
-# ces essais echouent quasi systematiquement et n'apprennent rien d'utile a Optuna.
+# 🔧 Borne haute relevee de 2000 a 20000 : sur un cluster dont le cout reel
+# avoisine 7200 (contre 250-350 pour les plus petits clusters testes), forcer
+# les 5 poids a une meme valeur uniforme jusqu'a 2000 ne suffisait jamais --
+# meme jusqu'a 10000, sans jamais depasser 11-17 problemes restants. La bonne
+# combinaison est probablement ASYMETRIQUE (chaque poids independant des
+# autres, comme le montrent les essais Optuna reussis sur les petits clusters),
+# pas une simple montee en echelle uniforme -- d'ou l'elargissement de la
+# plage plutot qu'une valeur fixe plus grande.
 def _suggest_penalty_weights(trial):
-    return {full_key: trial.suggest_float(short_key, 50, 2000, log=True)
+    return {full_key: trial.suggest_float(short_key, 50, 20000, log=True)
             for short_key, full_key in PARAM_KEY_MAP.items()}
 
 def objective(trial, data):
     penalty_weights = _suggest_penalty_weights(trial)
     bqm, _ = build_qubo(data, penalty_weights)
-    best = solve_qubo(bqm, num_reads=1000)
+    # 🔧 num_sweeps=5000 fixe explicitement -- seul reglage qui a montre un vrai
+    # effet lors du diagnostic (contrairement a num_reads seul, qui n'a presque
+    # rien change meme multiplie par 10).
+    best = solve_qubo(bqm, num_reads=1000, num_sweeps=5000)
     check = check_feasibility(best.sample, data)
     return best.energy if check["feasible"] else 1e6  # penalise fortement l'infaisable
 

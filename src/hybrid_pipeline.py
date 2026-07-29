@@ -51,29 +51,55 @@ def solve_hybrid(data: dict, n_clusters: int, penalty_weights: dict):
 
 
 def _pyomo_model_to_sample(model, sub_data):
-    """Convertit un modele Pyomo resolu en dict {nom_variable: 0/1}, avec la
-    meme convention de nommage que le QUBO (x_i_h_v, y_h, u_v) -- permet de
-    reutiliser check_feasibility et recombine_solutions sans les modifier."""
+    """Convertit un modele Pyomo RESOLU en dict {nom_variable: 0/1}.
+
+    Renvoie None si le modele n'a pas ete resolu (sous-probleme infaisable) :
+    dans ce cas Pyomo laisse toutes les valeurs a None, et tenter de les lire
+    plante. L'appelant DOIT verifier ce retour."""
     sample = {}
     for (i, h, v) in model.VALID:
-        sample[f"x_{i}_{h}_{v}"] = 1 if round(model.x[i, h, v].value) == 1 else 0
+        val = model.x[i, h, v].value
+        if val is None:
+            return None          # sous-probleme non resolu
+        sample[f"x_{i}_{h}_{v}"] = 1 if round(val) == 1 else 0
     for h in sub_data["hubs"]:
-        sample[f"y_{h}"] = 1 if round(model.y[h].value) == 1 else 0
+        val = model.y[h].value
+        if val is None:
+            return None
+        sample[f"y_{h}"] = 1 if round(val) == 1 else 0
     for v in sub_data["vehicles"]:
-        sample[f"u_{v}"] = 1 if round(model.u[v].value) == 1 else 0
+        val = model.u[v].value
+        if val is None:
+            return None
+        sample[f"u_{v}"] = 1 if round(val) == 1 else 0
     return sample
 
 
 def solve_hybrid_classical(data: dict, n_clusters: int):
     """Meme decomposition/recombinaison que solve_hybrid, mais chaque cluster
-    est resolu EXACTEMENT (Gurobi) plutot que par QUBO/annealing. Sert a (1)
-    obtenir un pipeline fonctionnel des maintenant, independamment du debogage
-    QUBO en cours, et (2) fournir le point de comparaison "classique decompose"
-    necessaire au tableau de l'etape 16."""
+    est resolu EXACTEMENT (Gurobi) plutot que par QUBO/annealing.
+
+    Si UN SEUL cluster est infaisable pris isolement, la decomposition entiere
+    est invalide : on le signale proprement au lieu de planter. Cela arrive
+    quand le decoupage est trop agressif pour la taille du probleme (ex. 2
+    clusters sur un jeu a 5 envois et 2 vehicules => 1 vehicule par cluster)."""
     clusters = decompose_network(data, n_clusters)
     cluster_samples = []
     for cluster_id, sub_data in clusters.items():
         model = build_classical_model(sub_data)
         solve_model(model, time_limit=60)
-        cluster_samples.append(_pyomo_model_to_sample(model, sub_data))
+        sample = _pyomo_model_to_sample(model, sub_data)
+        if sample is None:
+            return {
+                "sample": {},
+                "cost": None,
+                "feasible": False,
+                "issues": [
+                    f"cluster {cluster_id} ({len(sub_data['shipments'])} shipments, "
+                    f"{len(sub_data['vehicles'])} vehicles) is infeasible on its own "
+                    f"-- decomposition into {n_clusters} clusters is not viable here"
+                ],
+                "failed_cluster": cluster_id,
+            }
+        cluster_samples.append(sample)
     return recombine_solutions(cluster_samples, data)

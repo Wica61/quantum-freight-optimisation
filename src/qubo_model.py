@@ -41,7 +41,16 @@ def build_qubo(data, penalty_weights: dict):
             terms, lagrange_multiplier=P_capacity, label=f"capacity_{v}", constant=0, ub=0
         )
 
-    EMISSION_SCALE = 100
+    # EMISSION_SCALE=100 avait ete introduit pour supprimer un avertissement de
+    # dimod sur les coefficients fractionnaires. Effet de bord grave : la
+    # penalite d'une inegalite est QUADRATIQUE dans le residu, donc mettre les
+    # coefficients a l'echelle x100 multiplie la penalite par 100^2 = 10 000.
+    # Resultat : abandonner un envoi (cout P) devenait 2500x moins cher que
+    # d'ajuster les emissions -- le solveur sacrifiait des envois.
+    # On arrondit donc a l'unite : la perte de precision (< 1 unite d'emissions
+    # sur un plafond de ~200) est negligeable, et le paysage d'energie redevient
+    # exploitable (8 bits d'ecart au lieu de 15).
+    EMISSION_SCALE = 1
     P_emissions = penalty_weights["emissions"]
     emission_terms = [
         (f"x_{i}_{h}_{v}", round(data["emission"][f"{i}|{h}|{v}"] * EMISSION_SCALE))
@@ -52,7 +61,6 @@ def build_qubo(data, penalty_weights: dict):
         lagrange_multiplier=P_emissions,
         label="emissions_cap",
         constant=0,
-        ub=round(data["E_max"] * EMISSION_SCALE),
+        ub=int(data["E_max"] * EMISSION_SCALE),   # int() = arrondi vers le bas, conservateur
     )
-
     return bqm, valid_pairs

@@ -15,7 +15,7 @@ from src.feasibility import check_feasibility
 # comparaient donc des efforts d'annealing dans un rapport de 1 a 5.
 # On aligne sur 5000 et on rend le parametre explicite et propageable.
 DEFAULT_NUM_READS = 1000
-DEFAULT_NUM_SWEEPS = 5000
+DEFAULT_NUM_SWEEPS = 2000
 
 
 def recombine_solutions(cluster_samples: list, data: dict) -> dict:

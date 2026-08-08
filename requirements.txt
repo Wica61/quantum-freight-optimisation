@@ -4,6 +4,7 @@ gurobipy==11.0.3
 dimod==0.12.17          # représentation QUBO/BQM, indépendant du matériel
 dwave-neal==0.6.0       # simulated annealing — gratuit, sans compte D-Wave
 dwave-system==1.23.0    # utile si vous obtenez un accès Leap (gratuit, limité)
+dwave-samplers==1.6.0
 scikit-learn==1.5.0     # clustering pour l'agent de décomposition
 optuna==3.6.1           # apprentissage des poids de pénalité QUBO
 pandas==2.2.2

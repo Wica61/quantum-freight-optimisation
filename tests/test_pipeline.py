@@ -7,8 +7,19 @@ from src.hybrid_pipeline import solve_hybrid
 
 FIXTURE = "tests/fixtures/scaled_data_v2.json"
 JOINT = 8532.96
-POIDS = {k: 12000 for k in ["assignment", "hub_activation",
-                            "vehicle_activation", "capacity", "emissions"]}
+
+# Ratios asymetriques appris par Optuna (diagnostic H3), remis a l'echelle du
+# cout maximal de l'instance. Des poids UNIFORMES ne fonctionnent pas : le
+# recuit abandonne des envois plutot que de respecter la capacite.
+RATIOS = {"assignment": 20.4, "vehicle_activation": 6.3, "emissions": 1.3,
+          "hub_activation": 1.2, "capacity": 1.0}
+
+
+def poids(data):
+    mc = max(max(data["transport_cost"].values()),
+             max(h["cost"] for h in data["hubs"].values()),
+             max(v["fixed_cost"] for v in data["vehicles"].values()))
+    return {k: mc * r for k, r in RATIOS.items()}
 
 
 def test_optimum_joint_inchange():
@@ -21,18 +32,16 @@ def test_optimum_joint_inchange():
 
 
 def test_sample_coherent():
-    """Invariants structurels toujours vrais, et coherence du drapeau feasible :
-    une solution declaree faisable DOIT avoir 30 affectations. Le recuit etant
-    stochastique, un run infaisable n'est pas un bug -- mais un run faisable
-    avec un compte different le serait."""
+    """Invariants structurels, et coherence du drapeau feasible : une solution
+    declaree faisable DOIT avoir 30 affectations."""
     data = json.load(open(FIXTURE))
-    r = solve_hybrid(data, n_clusters=4, penalty_weights=POIDS)
+    r = solve_hybrid(data, n_clusters=4, penalty_weights=poids(data))
     s = r["sample"]
     assert sum(1 for k in s if k.startswith("y_")) == 3
     assert sum(1 for k in s if k.startswith("u_")) == 16
-    n_affectations = sum(1 for k, v in s.items() if k.startswith("x_") and v == 1)
     if r["feasible"]:
-        assert n_affectations == 30
+        assert sum(1 for k, v in s.items()
+                   if k.startswith("x_") and v == 1) == 30
 
 
 def test_cout_jamais_sous_optimum():
@@ -41,6 +50,6 @@ def test_cout_jamais_sous_optimum():
     ce qu'on croit."""
     data = json.load(open(FIXTURE))
     for _ in range(3):
-        r = solve_hybrid(data, n_clusters=4, penalty_weights=POIDS)
+        r = solve_hybrid(data, n_clusters=4, penalty_weights=poids(data))
         if r["feasible"]:
             assert r["cost"] >= JOINT - 0.01

@@ -1,6 +1,8 @@
 # src/qubo_model.py
 import dimod
 
+EMISSION_SCALE = 10
+
 def build_qubo(data, penalty_weights: dict):
     bqm = dimod.BinaryQuadraticModel(vartype=dimod.BINARY)
 
@@ -50,7 +52,17 @@ def build_qubo(data, penalty_weights: dict):
     # On arrondit donc a l'unite : la perte de precision (< 1 unite d'emissions
     # sur un plafond de ~200) est negligeable, et le paysage d'energie redevient
     # exploitable (8 bits d'ecart au lieu de 15).
-    EMISSION_SCALE = 1
+    # EMISSION_SCALE = 1
+
+    # EMISSION_SCALE=1 introduisait une erreur d'arrondi de +/-0.49 par terme, soit
+    # jusqu'a +7 cumules sur 30 envois actifs. Negligeable a 25 % de marge, mais
+    # decisif des qu'on resserre E_max (balayage a venir : marge ~6 unites a 1.02x).
+    # On monte a 10 -> erreur cumulee < 1.5.
+    # ATTENTION : la penalite d'une inegalite est QUADRATIQUE dans le residu.
+    # Multiplier les coefficients par 10 multiplie la penalite par 100 ; il faut
+    # donc diviser le poids d'emissions d'autant pour conserver l'equilibre entre
+    # les cinq familles de penalites (c'est ce qui avait fait echouer SCALE=100).
+    
     P_emissions = penalty_weights["emissions"]
     emission_terms = [
         (f"x_{i}_{h}_{v}", round(data["emission"][f"{i}|{h}|{v}"] * EMISSION_SCALE))
@@ -58,7 +70,7 @@ def build_qubo(data, penalty_weights: dict):
     ]
     bqm.add_linear_inequality_constraint(
         emission_terms,
-        lagrange_multiplier=P_emissions,
+        lagrange_multiplier=P_emissions / (EMISSION_SCALE ** 2),
         label="emissions_cap",
         constant=0,
         ub=int(data["E_max"] * EMISSION_SCALE),   # int() = arrondi vers le bas, conservateur
